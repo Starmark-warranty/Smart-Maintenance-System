@@ -3966,7 +3966,7 @@ async function _route(db, a, p) {
   case 'getMachineInfo': {
     const mi = await _machineInfo(db, p.machineId);
     if (!mi) return { ok: false, error: 'machine_not_found' };
-    return { ok: true, machineInfo: mi };
+    return { ok: true, machine: mi, machineInfo: mi };
   }
 
   /* ═══════ PM — หัวใจของระบบ ═══════
@@ -4055,16 +4055,29 @@ async function _route(db, a, p) {
   }
 
   case 'getMyPMHistory': {
+    /* แอดมิน/หัวหน้า เห็นประวัติของทุกคน · ช่างทั่วไปเห็นเฉพาะของตัวเอง
+       ตัดสินจาก role ในฐานข้อมูล ไม่เชื่อค่าที่หน้าเว็บส่งมา */
+    let seeAll = false;
+    const eid = String(p.empid || '').trim();
+    if (eid) {
+      const u = await db.from('users').select('role').eq('emp_id', eid).limit(1);
+      const role = (u.data && u.data[0] && u.data[0].role) || '';
+      seeAll = ['admin', 'chief', 'manager'].includes(String(role).toLowerCase());
+    }
     const q = db.from('pm_records')
-      .select('id,pm_date,pm_time,machine_id,line,machine_name,machine_status,item_statuses')
+      .select('id,pm_date,pm_time,machine_id,line,machine_name,machine_status,inspector_id,inspector_name,item_statuses')
       .order('pm_date', { ascending: false }).order('pm_time', { ascending: false })
-      .limit(p.limit || 100);
-    if (p.empid) q.eq('inspector_id', String(p.empid).trim());
+      .limit(p.limit || (seeAll ? 500 : 100));
+    if (eid && !seeAll) q.eq('inspector_id', eid);
     const rows = die(await q);
-    return { ok: true, history: rows.map(x => ({
+    const records = rows.map(x => ({
       id: x.id, date: _fmtTH(x.pm_date), time: String(x.pm_time || '').slice(0,5),
       machineId: x.machine_id, line: x.line, machineName: x.machine_name,
-      machineStatus: x.machine_status, itemStatuses: x.item_statuses || [] })) };
+      machineStatus: x.machine_status,
+      empid: x.inspector_id, techName: x.inspector_name,
+      itemStatuses: x.item_statuses || [] }));
+    /* หน้าเว็บอ่าน res.records */
+    return { ok: true, records, history: records, seeAll };
   }
 
   case 'getPMWindow': {
@@ -4079,7 +4092,8 @@ async function _route(db, a, p) {
     die(await db.from('pm_window').upsert({
       id: 1, start_time: w.startTime, end_time: w.endTime,
       updated_at: new Date().toISOString(), updated_by: w.updatedBy || p.empid || '' }));
-    return { ok: true };
+    /* หน้าเว็บเอาค่าที่ server ยืนยันกลับไปตั้ง Store */
+    return { ok: true, startTime: w.startTime, endTime: w.endTime };
   }
 
   case 'getPMSchedule': {
@@ -4121,13 +4135,20 @@ async function _route(db, a, p) {
 
   case 'assignTechnician': {
     const now = new Date().toISOString();
+    /* หน้าเว็บส่งมาเป็น techEmpid + assignedBy (ไม่ได้ส่งชื่อมา) — ไปดึงชื่อเอง */
+    const tid = String(p.techEmpid || p.techId || '').trim();
+    let tname = p.techName || '';
+    if (!tname && tid) {
+      const u = await db.from('users').select('full_name').eq('emp_id', tid).limit(1);
+      tname = (u.data && u.data[0] && u.data[0].full_name) || '';
+    }
     die(await db.from('jobs').update({
-      assigned_to: p.techId, assigned_name: p.techName,
+      assigned_to: tid, assigned_name: tname,
       status: 'assigned', assigned_at: now, updated_at: now }).eq('id', p.jobId));
     die(await db.from('assignments').insert({
       id: 'ASN' + Date.now().toString(36), job_id: p.jobId,
-      assigned_to: p.techId, assigned_name: p.techName,
-      assigned_by: p.byId || p.empid || '', assigned_at: now, status: 'assigned' }));
+      assigned_to: tid, assigned_name: tname,
+      assigned_by: p.assignedBy || p.byId || p.empid || '', assigned_at: now, status: 'assigned' }));
     return { ok: true };
   }
 
@@ -4211,13 +4232,15 @@ async function _route(db, a, p) {
     ]);
     const total = mAll.count || 0;
     const doneSet = new Set((pmToday.data || []).map(r => r.machine_id));
-    return { ok: true, summary: {
+    const stats = {
       totalMachines: total,
       doneToday: doneSet.size,
       notDoneToday: Math.max(total - doneSet.size, 0),
       compliancePct: total ? Math.round(doneSet.size * 100 / total) : 0,
       pendingJobs: jOpen.count || 0,
-    }};
+    };
+    /* หน้าเว็บอ่าน res.stats */
+    return { ok: true, stats, summary: stats };
   }
 
   /* ═══════ ส่ง push — ทำใน Supabase ไม่ได้ ═══════
@@ -4276,6 +4299,79 @@ function _jobIn(j, id) {
   return r;
 }
 
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SupabaseRealtime — เห็นสด ๆ ข้ามเครื่อง
+   มือถือกดบันทึก PM -> หน้าจอคอมรู้ทันที ไม่ต้องกดรีเฟรช
+   (Apps Script ทำแบบนี้ไม่ได้เลย ทางเดียวคือตั้งเวลาถามซ้ำ ซึ่งกินโควตา)
+   ═══════════════════════════════════════════════════════════════════════ */
+const SXRealtime = (() => {
+  let _ch = null, _on = false;
+
+  function _toast(msg) {
+    try {
+      if (typeof _showSyncBar === 'function') { _showSyncBar(msg, 'ok'); return; }
+    } catch (e) {}
+    let b = document.getElementById('sx-rt-toast');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'sx-rt-toast';
+      b.style.cssText = 'position:fixed;left:50%;bottom:84px;transform:translateX(-50%);'
+        + 'background:#1565C0;color:#fff;padding:10px 16px;border-radius:20px;'
+        + 'font-size:13px;z-index:99999;box-shadow:0 2px 12px rgba(0,0,0,.28);'
+        + 'max-width:88vw;text-align:center;transition:opacity .3s';
+      document.body.appendChild(b);
+    }
+    b.textContent = msg;
+    b.style.opacity = '1';
+    clearTimeout(b._t);
+    b._t = setTimeout(() => { b.style.opacity = '0'; }, 4000);
+  }
+
+  /* สั่งให้หน้าที่เปิดอยู่โหลดใหม่ — เรียกเฉพาะตัวที่มีจริง */
+  function _refresh() {
+    try { if (typeof DashboardSync !== 'undefined' && DashboardSync.refresh) DashboardSync.refresh({ force: true }); } catch (e) {}
+    try { if (typeof PMHistory !== 'undefined' && PMHistory.refreshServerCount) PMHistory.refreshServerCount(); } catch (e) {}
+    try { if (typeof _syncJobs === 'function') _syncJobs(false); } catch (e) {}
+  }
+
+  async function start() {
+    if (_on || BACKEND !== 'supabase') return;
+    let db;
+    try { db = await _sbReady(); } catch (e) { console.warn('[Realtime] ต่อไม่ได้:', e); return; }
+    _ch = db.channel('sx-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pm_records' }, ({ new: r }) => {
+        const me = (typeof Store !== 'undefined' && Store.get('user')) || {};
+        console.log('[Realtime] PM ใหม่:', r.machine_id, r.inspector_name);
+        if (String(r.inspector_id || '') !== String(me.empid || '')) {
+          _toast('PM ใหม่: ' + (r.machine_id || '') + ' โดย ' + (r.inspector_name || '-'));
+        }
+        _refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, ({ eventType, new: r }) => {
+        console.log('[Realtime] งานซ่อม', eventType, r && r.id);
+        if (eventType === 'INSERT' && r) _toast('งานแจ้งซ่อมใหม่: ' + (r.asset_id || ''));
+        _refresh();
+      })
+      .subscribe((st) => {
+        console.log('[Realtime]', st);
+        if (st === 'SUBSCRIBED') { _on = true; console.log('[Realtime] ✅ เชื่อมแล้ว'); }
+      });
+  }
+
+  function stop() { try { if (_ch) _ch.unsubscribe(); } catch (e) {} _ch = null; _on = false; }
+  function isOn() { return _on; }
+
+  return { start, stop, isOn };
+})();
+
+/* เริ่มเองเมื่อหน้าเว็บพร้อม */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(() => SXRealtime.start(), 1500));
+} else {
+  setTimeout(() => SXRealtime.start(), 1500);
+}
 
 const SHEETS_CONFIG = {
   enabled: true,                 // v18b: เปิดใช้งาน sync กับ Google Sheets
