@@ -11,7 +11,7 @@
       ที่นี่ใช้ network-first สำหรับหน้าเว็บ และ cache-first เฉพาะไอคอน
 ═══════════════════════════════════════════════════════════════════════ */
 
-const VER   = 'starmark-v2.0.1';
+const VER   = 'starmark-v2.0.2';
 const SHELL = VER + '-shell';
 
 /* ── Firebase (compat build เท่านั้น ใช้ใน service worker ได้) ── */
@@ -40,6 +40,10 @@ function navOf(type) {
 }
 
 /* ═══ 1. Push ตอนแอปปิด / อยู่เบื้องหลัง ═══
+   ⚠️ เรื่องเสียง: เว็บกำหนดไฟล์เสียงเองไม่ได้บน Android
+      เสียงถูกคุมโดย "ช่องแจ้งเตือน" ของระบบปฏิบัติการ
+      ตั้งได้ที่ Settings -> แอป -> (ชื่อแอป หรือ Chrome) -> การแจ้งเตือน
+      ที่ทำได้จากโค้ดคือ silent:false + renotify:true + สั่งการสั่น
    ส่งแบบ data-only จากหลังบ้าน แล้วให้ SW วาดเอง
    -> คุมข้อความ/ปุ่ม/ปลายทางได้เต็มที่ และไม่เด้งซ้อนกับ onMessage ตอนแอปเปิด */
 messaging.onBackgroundMessage((payload) => {
@@ -54,9 +58,10 @@ messaging.onBackgroundMessage((payload) => {
     icon:  './icon-192.png',
     badge: './icon-96.png',
     tag:   d.tag || ('sm-' + (d.type || 'info')),
-    renotify: true,
+    renotify: true,          /* ข้อความใหม่ tag เดิม -> ให้เตือนซ้ำ ไม่ใช่แทนแบบเงียบ */
+    silent: false,           /* บอกชัดว่าไม่ใช่แจ้งเตือนแบบเงียบ */
     requireInteraction: false,
-    vibrate: [100, 50, 100],
+    vibrate: [200, 100, 200],
     data: { nav, type: d.type || '', jobId: d.jobId || '', machineId: d.machineId || '' },
     actions: [{ action: 'open', title: 'เปิดดู' }]
   });

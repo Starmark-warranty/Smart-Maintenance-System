@@ -4398,6 +4398,71 @@ function _jobIn(j, id) {
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════════
+   SXSound — เสียงแจ้งเตือนตอนแอปเปิดอยู่
+   ───────────────────────────────────────────────────────────────────────
+   ทำไมต้องสร้างเสียงเอง:
+     ของเดิมใช้ไฟล์ wav ฝัง base64 ที่มีข้อมูลเสียงแค่ 2 ไบต์ = เงียบสนิท
+     ตรงนี้สังเคราะห์เสียงสองโน้ตด้วย Web Audio จึงดังจริงทุกเครื่อง
+     ไม่ต้องโหลดไฟล์เสียงเพิ่ม
+
+   ข้อจำกัดที่แก้ไม่ได้ด้วยโค้ด:
+     ตอนแอป "ปิดอยู่" เสียงถูกคุมโดยช่องแจ้งเตือนของ Android
+     เว็บสั่งเสียงเองไม่ได้ ต้องไปตั้งใน Settings ของเครื่อง
+═══════════════════════════════════════════════════════════════════════ */
+const SXSound = (() => {
+  let ctx = null;
+
+  function unlock() {
+    try {
+      if (!ctx) {
+        const C = window.AudioContext || window.webkitAudioContext;
+        if (!C) return null;
+        ctx = new C();
+      }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      return ctx;
+    } catch (e) { return null; }
+  }
+
+  /* เสียงสองโน้ต 880Hz -> 660Hz คล้ายเสียงแจ้งเตือนทั่วไป */
+  function play(vol) {
+    const c = unlock();
+    if (!c || c.state !== 'running') return false;
+    try {
+      const t0 = c.currentTime;
+      const v  = typeof vol === 'number' ? vol : 0.22;
+      [{ f: 880, at: t0,        d: 0.16 },
+       { f: 660, at: t0 + 0.17, d: 0.24 }].forEach((n) => {
+        const osc = c.createOscillator(), g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = n.f;
+        g.gain.setValueAtTime(0.0001, n.at);
+        g.gain.exponentialRampToValueAtTime(v, n.at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, n.at + n.d);
+        osc.connect(g).connect(c.destination);
+        osc.start(n.at); osc.stop(n.at + n.d + 0.02);
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function buzz(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern || [120, 60, 120]); } catch (e) {}
+  }
+
+  /* เรียกทีเดียวได้ทั้งเสียงและสั่น */
+  function alert_(pattern, vol) { const ok = play(vol); buzz(pattern); return ok; }
+
+  /* เบราว์เซอร์ห้ามเล่นเสียงจนกว่าผู้ใช้จะแตะหน้าจอครั้งแรก
+     ดักไว้ตรงนี้เพื่อปลดล็อกล่วงหน้า เสียงแรกจะได้ดังทันที ไม่เงียบ */
+  ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => {
+    window.addEventListener(ev, unlock, { once: true, passive: true });
+  });
+
+  return { play, buzz, alert: alert_, unlock, ready: () => !!ctx && ctx.state === 'running' };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
    SXInstall — ปุ่มติดตั้งเป็นแอป + ตัวช่วยทดสอบแจ้งเตือน
    ───────────────────────────────────────────────────────────────────────
    Android/Chrome : เบราว์เซอร์ยิง beforeinstallprompt มาให้ -> กดติดตั้งได้เลย
@@ -4643,14 +4708,24 @@ const SXInstall = (() => {
       Toast.show('ยังไม่ได้อนุญาต — เข้าบัญชี แล้วกด "เปิดรับการแจ้งเตือน" ก่อน '
         + '(ถ้าเคยกดแล้วแต่ขึ้นแบบนี้ แปลว่า Chrome ถอนสิทธิ์ไป ต้องกดเปิดใหม่)', 'warn', 10000);
       return; }
+    /* เล่นเสียงในหน้าเว็บด้วย เพื่อแยกให้ออกว่าเสียงเงียบเพราะอะไร:
+       ได้ยินเสียงนี้แต่แจ้งเตือนเงียบ = ต้องไปตั้งค่าช่องแจ้งเตือนของ Android */
+    let sndOK = false;
+    try { sndOK = SXSound.alert([120, 60, 120]); } catch (e) {}
+
     const reg = await navigator.serviceWorker.ready;
     await reg.showNotification('🔔 ทดสอบแจ้งเตือน STARMARK', {
       body: 'ถ้าเห็นข้อความนี้ = เครื่องนี้รับแจ้งเตือนได้แล้ว',
       icon: './icon-192.png', badge: './icon-96.png',
-      tag: 'sm-test', vibrate: [100, 50, 100],
+      tag: 'sm-test', renotify: true, silent: false,
+      vibrate: [200, 100, 200],
       data: { nav: 'home', type: 'test' },
     });
-    Toast.show('✅ ส่งแจ้งเตือนทดสอบแล้ว', 'ok');
+    Toast.show(sndOK
+      ? '✅ ส่งแจ้งเตือนแล้ว + เล่นเสียงทดสอบในแอป — ถ้าได้ยินเสียงนี้แต่แจ้งเตือนเงียบ '
+        + 'ให้ไปตั้งเสียงที่ Settings ของเครื่อง'
+      : '✅ ส่งแจ้งเตือนแล้ว (เล่นเสียงในแอปไม่ได้ ลองแตะหน้าจอก่อนแล้วกดใหม่)',
+      'ok', 12000);
   }
 
   /* นับจำนวนครั้งที่เปิดแอป — ไม่เด้งชวนติดตั้งตั้งแต่ครั้งแรก
@@ -4691,6 +4766,8 @@ window.installApp = () => SXInstall.go();
    ออกแบบให้ไม่แตะ #app — แค่เพิ่ม element ข้าง ๆ
    ฟอร์ม สแกน QR overlay ทุกอย่างจึงทำงานเหมือนเดิมทั้งหมด
 ═══════════════════════════════════════════════════════════════════════ */
+
+
 const SXDesktop = (() => {
   const MIN_W = 1100;
   const KEY   = 'sx_desk_mode';
@@ -12781,9 +12858,15 @@ const NotifPoller = (() => {
     }
   }
 
-  /* v3.9: เล่นเสียงแจ้งเตือน — Web Audio (ใช้ได้บน iOS หลัง user interaction) */
-  let _audioCtx = null;
+  /* เล่นเสียงผ่านโมดูลกลาง — เก็บโค้ดเดิมไว้เป็นตัวสำรอง */
   function _playNotifSound() {
+    try {
+      if (typeof SXSound !== 'undefined' && SXSound.play()) return;
+    } catch (e) {}
+    return _playNotifSoundLegacy();
+  }
+  let _audioCtx = null;
+  function _playNotifSoundLegacy() {
     try {
       if (!_audioCtx) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -13156,10 +13239,14 @@ onMessage(messaging, (payload) => {
 
   /* แสดง Toast — กดได้ถ้ามี navTarget */
   const fullMsg = '🔔 ' + title + (body ? '\n' + body : '');
+
+  /* เสียง + สั่น ทุกประเภท — ของเดิมมีเฉพาะบางประเภท และไฟล์เสียงก็เงียบ */
+  try { if (typeof SXSound !== 'undefined') SXSound.alert([120, 60, 120]); } catch (e) {}
+
   if (navTarget && typeof App !== 'undefined' && typeof App._navigateToTarget === 'function') {
-    Toast.showActionable(fullMsg, () => App._navigateToTarget(navTarget), 'ok', 8000);
+    Toast.showActionable(fullMsg, () => App._navigateToTarget(navTarget), 'ok', 9000);
   } else {
-    Toast.show(fullMsg, 'ok', 6000);
+    Toast.show(fullMsg, 'ok', 8000);
   }
 
   /* ═══════ REALTIME DATA SYNC ═══════
@@ -13180,13 +13267,8 @@ onMessage(messaging, (payload) => {
           }, 500);
         }
       }
-      /* Play sound alert */
-      try {
-        if (typeof Audio !== 'undefined') {
-          const beep = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA');
-          beep.play().catch(() => {});
-        }
-      } catch (e) {}
+      /* เสียงเล่นไปแล้วด้านบนด้วย SXSound — ไฟล์ wav เดิมมีข้อมูลเสียง 2 ไบต์
+         คือไฟล์เปล่า ไม่เคยดังเลย จึงเอาออก */
     }
 
     if (type === 'pm_upcoming') {
