@@ -1,0 +1,37 @@
+{
+  "name": "STARMARK — Smart Maintenance",
+  "short_name": "STARMARK",
+  "description": "ระบบแจ้งซ่อมและงาน PM เครื่องจักร",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1565C0",
+  "theme_color": "#1565C0",
+  "lang": "th",
+  "dir": "ltr",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    { "src": "./icons/icon-96.png",  "sizes": "96x96",   "type": "image/png" },
+    { "src": "./icons/icon-152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "./icons/icon-167.png", "sizes": "167x167", "type": "image/png" },
+    { "src": "./icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "งาน PM",
+      "short_name": "PM",
+      "url": "./index.html?nav=pm",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "แจ้งซ่อม",
+      "short_name": "แจ้งซ่อม",
+      "url": "./index.html?nav=repair",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
