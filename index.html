@@ -2732,6 +2732,10 @@ body.sx-desk #offline-banner{ left:0; right:auto; width:430px; margin:0 }
 }
 #sx-mode:hover{ background:rgba(255,255,255,.3) }
 @media (min-width:1100px){ #sx-mode{ display:flex } }
+/* อยู่โหมดคอมแล้วซ่อนปุ่มลอย — ไม่งั้นไปทับปุ่มบนแถบแดชบอร์ด
+   ตอนนั้นใช้ปุ่ม "โหมดมือถือ" ที่อยู่ในแถบแทน */
+body.sx-desk #sx-mode{ display:none !important }
+.sx-desk-bar .sx-desk-btn + .sx-desk-btn{ margin-left:6px }
 
 /* ── Language Switcher ── */
 .lang-wrap{position:relative;flex-shrink:0}
@@ -3674,7 +3678,7 @@ body.sx-desk #offline-banner{ left:0; right:auto; width:430px; margin:0 }
     <label class="fs-label"><span id="i18n-reg-name">ชื่อพนักงาน</span> <span class="fs-req">*</span></label>
     <input type="text" id="r-name" class="fi" placeholder="ชื่อ-นามสกุล" style="margin-bottom:12px" maxlength="80">
     <label class="fs-label"><span id="i18n-reg-empid">รหัสพนักงาน</span> <span class="fs-req">*</span></label>
-    <input type="text" id="r-empid" class="fi" placeholder="เช่น 1007932 (7 หลัก)" style="margin-bottom:6px" maxlength="8" inputmode="numeric" pattern="[0-9]*">
+    <input type="text" id="r-empid" class="fi" placeholder="เช่น 1009999 (7 หลัก)" style="margin-bottom:6px" maxlength="8" inputmode="numeric" pattern="[0-9]*">
     <div id="i18n-g68" style="font-size:.72rem;color:var(--c-g500);margin-bottom:16px">พนักงานใช้รหัสนี้เป็นรหัสผ่านตอน Login (เปลี่ยนได้ภายหลัง)</div>
     <div style="display:flex;gap:10px;padding-bottom:20px">
       <button class="btn-cancel" onclick="UI.closeAllSheets()" type="button" id="i18n-reg-cancel">ยกเลิก</button>
@@ -4702,7 +4706,7 @@ const SXDesktop = (() => {
       + '<div><div class="sx-desk-t">📊 แดชบอร์ด</div>'
       + '<div class="sx-desk-s">อัปเดตอัตโนมัติทุก 60 วินาที</div></div>'
       + '<button class="sx-desk-btn" onclick="SXDesktop.reload()">↻ รีเฟรช</button>'
-      + '<button class="sx-desk-btn" onclick="SXDesktop.off()">✕ ซ่อนแผงนี้</button>'
+      + '<button class="sx-desk-btn" onclick="SXDesktop.off()">📱 โหมดมือถือ</button>'
       + '</div><iframe id="sx-desk-f" title="แดชบอร์ด" src="about:blank"></iframe>';
     document.body.appendChild(el);
     return el;
@@ -4719,8 +4723,9 @@ const SXDesktop = (() => {
   }
 
   function label() {
+    /* ปุ่มลอยโผล่เฉพาะตอนอยู่โหมดมือถือ จึงมีข้อความเดียวเสมอ */
     const b = document.getElementById('sx-mode');
-    if (b) b.innerHTML = on ? '📱 โหมดมือถือ' : '🖥️ โหมดคอม';
+    if (b) b.innerHTML = '🖥️ โหมดคอม';
   }
 
   function apply(state) {
@@ -5888,7 +5893,7 @@ const Auth = (() => {
 
     /* ── ตรวจสอบรูปแบบรหัสพนักงาน (7 หลัก) ── */
     if (!/^\d{6,8}$/.test(eid)) {
-      _showErr('⚠ รหัสพนักงานต้องเป็นตัวเลข 7 หลัก (ตัวอย่าง: 1007932)', msg);
+      _showErr('⚠ รหัสพนักงานต้องเป็นตัวเลข 7 หลัก (ตัวอย่าง: 1009999)', msg);
       return;
     }
 
@@ -11267,7 +11272,7 @@ window.onload = () => {
     console.log('  __STARMARK.listMachines()         — ดูเครื่องจักรทั้งหมดในชีต');
     console.log('  __STARMARK.testPM("M 270202 C")   — ทดสอบดึง PM ของเครื่อง');
     console.log('%c👥 ข้อมูลผู้ใช้ (Users):', 'font-weight:bold;color:#E65100');
-    console.log('  __STARMARK.checkUser("1007932")   — ดูข้อมูล user');
+    console.log('  __STARMARK.checkUser("1009999")   — ดูข้อมูล user');
     console.log('  __STARMARK.listUsers()            — ดู user ทั้งหมด');
     console.log('  __STARMARK.listUsers("321")       — filter ตาม pool/name');
     console.log('%c🗑️ ล้างข้อมูล (Reset):', 'font-weight:bold;color:#C62828');
