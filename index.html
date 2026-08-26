@@ -16,13 +16,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="application-name" content="STARMARK SB">
 <!-- Icons -->
-<link rel="icon" type="image/png" sizes="96x96" href="./favicon-96x96.png">
-<link rel="icon" type="image/png" sizes="192x192" href="./web-app-manifest-192x192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="./web-app-manifest-512x512.png">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
-<link rel="apple-touch-icon" sizes="152x152" href="./icon-152.png">
-<link rel="apple-touch-icon" sizes="167x167" href="./icon-167.png">
-<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="96x96" href="./icons/icon-96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="./icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="./icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
 <title>STARMARK — Smart Maintenance v19-SB (ทดสอบ Supabase)</title>
 <style>
 /* ═══════════════════════════════════════════════════════════
@@ -4209,15 +4209,20 @@ async function _route(db, a, p) {
   }
 
   case 'saveFCMToken': {
+    /* เก็บลง Supabase (สำหรับตัวส่งในอนาคต) */
     die(await db.from('fcm_tokens').upsert({
       token: p.token, emp_id: String(p.empid || '').trim(),
       platform: p.platform || 'web', user_name: p.name || '',
       updated_at: new Date().toISOString() }));
+    /* ⚠️ และส่งต่อไป Apps Script ด้วย — ตัวส่ง push จริงยังอ่านจากชีท FCMTokens
+       ถ้าไม่ทำ token จะอยู่แต่ใน Supabase แล้วแจ้งเตือนไปไม่ถึงเครื่องเลย */
+    try { await window._callGAS(p); } catch (e) { console.warn('[FCM] ส่งต่อ GAS ไม่ได้:', e); }
     return { ok: true };
   }
 
   case 'removeFCMToken': {
     die(await db.from('fcm_tokens').delete().eq('token', p.token));
+    try { await window._callGAS(p); } catch (e) {}
     return { ok: true };
   }
 
@@ -4329,6 +4334,167 @@ function _jobIn(j, id) {
    มือถือกดบันทึก PM -> หน้าจอคอมรู้ทันที ไม่ต้องกดรีเฟรช
    (Apps Script ทำแบบนี้ไม่ได้เลย ทางเดียวคือตั้งเวลาถามซ้ำ ซึ่งกินโควตา)
    ═══════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SXInstall — ปุ่มติดตั้งเป็นแอป + ตัวช่วยทดสอบแจ้งเตือน
+   ───────────────────────────────────────────────────────────────────────
+   Android/Chrome : เบราว์เซอร์ยิง beforeinstallprompt มาให้ -> กดติดตั้งได้เลย
+   iOS/Safari     : ไม่มี event นี้ ต้องบอกวิธีเอง (แชร์ -> เพิ่มไปที่หน้าจอโฮม)
+                    และ iOS จะส่ง push ได้ก็ต่อเมื่อ "ติดตั้งแล้ว" เท่านั้น
+═══════════════════════════════════════════════════════════════════════ */
+const SXInstall = (() => {
+  let prompt_ = null;
+
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const installed = () => window.navigator.standalone === true ||
+                          window.matchMedia('(display-mode: standalone)').matches;
+
+  function bar() {
+    if (installed() || document.getElementById('sx-install')) return;
+    try { if (localStorage.getItem('sx_install_hide') === '1') return; } catch (e) {}
+    if (!prompt_ && !isIOS()) return;   /* Android ที่ยังไม่พร้อม -> ยังไม่โชว์ */
+
+    const b = document.createElement('div');
+    b.id = 'sx-install';
+    b.style.cssText = 'position:fixed;left:10px;right:10px;bottom:70px;z-index:9998;'
+      + 'background:linear-gradient(135deg,#1565C0,#0D47A1);color:#fff;border-radius:16px;'
+      + 'padding:13px 14px;display:flex;align-items:center;gap:12px;'
+      + 'box-shadow:0 8px 28px rgba(13,71,161,.42);max-width:430px;margin:0 auto;'
+      + "font-family:'IBM Plex Sans Thai','Kanit',sans-serif;animation:sxIn .35s ease";
+    b.innerHTML =
+      '<div style="width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.2);'
+      + 'display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">📲</div>'
+      + '<div style="flex:1;min-width:0">'
+      +   '<div style="font-size:.86rem;font-weight:800;line-height:1.3">ติดตั้งเป็นแอปบนเครื่อง</div>'
+      +   '<div style="font-size:.7rem;color:rgba(255,255,255,.8);margin-top:2px;line-height:1.4">'
+      +     (isIOS() ? 'จำเป็นต้องติดตั้งก่อน ถึงจะรับแจ้งเตือนได้' : 'เปิดเร็วขึ้น และรับแจ้งเตือนได้')
+      +   '</div>'
+      + '</div>'
+      + '<button id="sx-inst-go" style="border:none;border-radius:10px;padding:9px 15px;'
+      +   'background:#fff;color:#0D47A1;font-family:inherit;font-size:.8rem;font-weight:800;'
+      +   'cursor:pointer;flex-shrink:0">ติดตั้ง</button>'
+      + '<button id="sx-inst-x" aria-label="ปิด" style="border:none;background:none;color:rgba(255,255,255,.65);'
+      +   'font-size:1.2rem;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>';
+    document.body.appendChild(b);
+
+    if (!document.getElementById('sx-inst-css')) {
+      const st = document.createElement('style');
+      st.id = 'sx-inst-css';
+      st.textContent = '@keyframes sxIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}';
+      document.head.appendChild(st);
+    }
+    document.getElementById('sx-inst-go').onclick = go;
+    document.getElementById('sx-inst-x').onclick = () => {
+      try { localStorage.setItem('sx_install_hide', '1'); } catch (e) {}
+      b.remove();
+    };
+  }
+
+  async function go() {
+    if (installed()) { Toast.show('✅ ติดตั้งแล้ว', 'ok'); return; }
+
+    if (isIOS()) { iosHelp(); return; }
+
+    if (!prompt_) {
+      Toast.show('เบราว์เซอร์นี้ยังไม่พร้อมติดตั้ง — ลองใช้ Chrome', 'warn', 4000);
+      return;
+    }
+    prompt_.prompt();
+    const { outcome } = await prompt_.userChoice;
+    prompt_ = null;
+    const el = document.getElementById('sx-install');
+    if (outcome === 'accepted') {
+      if (el) el.remove();
+      Toast.show('✅ ติดตั้งสำเร็จ — เปิดจากไอคอนบนหน้าจอได้เลย', 'ok', 5000);
+    }
+  }
+
+  /* iOS ไม่มี API ติดตั้ง ต้องสอนด้วยมือ */
+  function iosHelp() {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.62);'
+      + 'display:flex;align-items:flex-end;justify-content:center;padding:16px;'
+      + "font-family:'IBM Plex Sans Thai','Kanit',sans-serif";
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:22px;max-width:400px;width:100%">'
+      + '<div style="font-size:1.05rem;font-weight:900;color:#1A237E;margin-bottom:4px">📲 ติดตั้งบน iPhone / iPad</div>'
+      + '<div style="font-size:.78rem;color:#78909C;margin-bottom:16px;line-height:1.5">'
+      +   'iOS ส่งแจ้งเตือนให้เว็บได้เฉพาะแอปที่ติดตั้งแล้วเท่านั้น — เปิดในเบราว์เซอร์เฉย ๆ จะไม่ได้รับ</div>'
+      + [['1','แตะปุ่ม <b>แชร์</b> ⬆️ ที่แถบล่างของ Safari'],
+         ['2','เลื่อนลง เลือก <b>เพิ่มไปที่หน้าจอโฮม</b>'],
+         ['3','แตะ <b>เพิ่ม</b> มุมขวาบน'],
+         ['4','ปิด Safari แล้วเปิดจาก<b>ไอคอนบนหน้าจอ</b>'],
+         ['5','เข้าบัญชี → <b>เปิดรับการแจ้งเตือน</b>']].map(function(x){
+          return '<div style="display:flex;gap:11px;margin-bottom:11px;align-items:flex-start">'
+            + '<div style="width:24px;height:24px;border-radius:8px;background:#E3F2FD;color:#1565C0;'
+            +   'display:flex;align-items:center;justify-content:center;font-size:.74rem;'
+            +   'font-weight:800;flex-shrink:0">' + x[0] + '</div>'
+            + '<div style="font-size:.83rem;color:#37474F;line-height:1.5;padding-top:2px">' + x[1] + '</div></div>';
+         }).join('')
+      + '<div style="background:#FFF8E1;border-radius:11px;padding:10px 13px;font-size:.74rem;'
+      +   'color:#E65100;line-height:1.5;margin:14px 0 16px">'
+      +   '⚠️ ต้องเป็น iOS 16.4 ขึ้นไป และต้องใช้ <b>Safari</b> เท่านั้น (Chrome บน iPhone ทำไม่ได้)</div>'
+      + '<button id="sx-ios-x" style="width:100%;border:none;border-radius:12px;padding:13px;'
+      +   'background:#1565C0;color:#fff;font-family:inherit;font-size:.9rem;font-weight:800;cursor:pointer">'
+      +   'เข้าใจแล้ว</button></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#sx-ios-x').onclick = () => ov.remove();
+    ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  }
+
+  /* ── ตัวช่วยตรวจสถานะแจ้งเตือน (เรียกจาก Console) ── */
+  function status() {
+    const r = {
+      ติดตั้งเป็นแอปแล้ว: installed(),
+      ระบบ: isIOS() ? 'iOS' : /Android/i.test(navigator.userAgent) ? 'Android' : 'Desktop',
+      รองรับแจ้งเตือน: ('Notification' in window),
+      สิทธิ์: (('Notification' in window) ? Notification.permission : 'ไม่รองรับ'),
+      มี_token: !!localStorage.getItem('sm_fcm_token'),
+      service_worker: ('serviceWorker' in navigator),
+    };
+    if (isIOS() && !installed()) {
+      r.สรุป = '❌ iOS ต้องติดตั้งเป็นแอปก่อน ถึงจะรับแจ้งเตือนได้';
+    } else if (r.สิทธิ์ !== 'granted') {
+      r.สรุป = '⚠️ ยังไม่ได้กดอนุญาต — เข้าบัญชี → เปิดรับการแจ้งเตือน';
+    } else if (!r.มี_token) {
+      r.สรุป = '⚠️ อนุญาตแล้วแต่ยังไม่มี token — กดเปิดรับการแจ้งเตือนอีกครั้ง';
+    } else {
+      r.สรุป = '✅ พร้อมรับแจ้งเตือน';
+    }
+    console.table(r);
+    return r;
+  }
+
+  /* ยิงแจ้งเตือนทดสอบใส่เครื่องตัวเอง (ไม่ผ่านเซิร์ฟเวอร์) */
+  async function testLocal() {
+    if (!('Notification' in window)) { Toast.show('เบราว์เซอร์ไม่รองรับ', 'err'); return; }
+    if (Notification.permission !== 'granted') {
+      Toast.show('ยังไม่ได้อนุญาต — กดเปิดรับการแจ้งเตือนก่อน', 'warn', 4000); return; }
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('🔔 ทดสอบแจ้งเตือน STARMARK', {
+      body: 'ถ้าเห็นข้อความนี้ = เครื่องนี้รับแจ้งเตือนได้แล้ว',
+      icon: './icons/icon-192.png', badge: './icons/icon-96.png',
+      tag: 'sm-test', vibrate: [100, 50, 100],
+      data: { nav: 'home', type: 'test' },
+    });
+    Toast.show('✅ ส่งแจ้งเตือนทดสอบแล้ว', 'ok');
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); prompt_ = e;
+    setTimeout(bar, 2500);
+  });
+  window.addEventListener('appinstalled', () => {
+    const el = document.getElementById('sx-install'); if (el) el.remove();
+    Toast.show('✅ ติดตั้งแล้ว — เปิดจากไอคอนบนหน้าจอ', 'ok', 5000);
+  });
+  /* iOS: ไม่มี event ให้รอ -> โชว์เองหลังเข้าระบบสักพัก */
+  setTimeout(() => { if (isIOS()) bar(); }, 6000);
+
+  return { go, bar, status, testLocal, installed, isIOS };
+})();
+window.installApp = () => SXInstall.go();
+
 const SXRealtime = (() => {
   let _ch = null, _on = false;
 
@@ -7136,7 +7302,19 @@ const Renderer = (() => {
     const pushBtnClick = pushOn ? 'onclick="Push.disable()"' : 'onclick="Push.enable()"';
     if (pushSupported) {
       html += `<div style="padding:8px 16px 0"><button class="btn-cancel" style="${pushBtnStyle}" ${pushBtnClick}>${pushBtnLabel}</button></div>`;
+      /* ทดสอบแจ้งเตือนกับเครื่องตัวเอง — ไม่ผ่านเซิร์ฟเวอร์ ใช้เช็คว่าเครื่องนี้พร้อมไหม */
+      if (pushOn) {
+        html += `<div style="padding:0 16px"><button class="btn-cancel" style="width:100%;background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7;margin-bottom:8px" onclick="SXInstall.testLocal()">🧪 ทดสอบแจ้งเตือน (เครื่องนี้)</button></div>`;
+      }
     }
+    /* ── ปุ่มติดตั้งเป็นแอป ── */
+    try {
+      if (typeof SXInstall !== 'undefined' && !SXInstall.installed()) {
+        html += `<div style="padding:0 16px"><button class="btn-cancel" style="width:100%;background:linear-gradient(135deg,#E3F2FD,#BBDEFB);color:#0D47A1;border-color:#1565C0;margin-bottom:8px;font-weight:800" onclick="SXInstall.go()">📲 ติดตั้งเป็นแอปบนเครื่อง</button></div>`;
+      } else if (typeof SXInstall !== 'undefined') {
+        html += `<div style="padding:0 16px 8px;text-align:center;font-size:.72rem;color:var(--c-greendk);font-weight:700">✅ ติดตั้งเป็นแอปแล้ว</div>`;
+      }
+    } catch (e) {}
     /* ── Admin Panel (v3.17.1: เฉพาะ admin เท่านั้น) ── */
     if (user.role === 'admin') {
       html += `<div style="padding:8px 16px 0">
