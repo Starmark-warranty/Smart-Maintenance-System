@@ -2680,6 +2680,59 @@ html, body {
   background:linear-gradient(180deg,#0D47A1,#1565C0) !important;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+   โหมดคอม — จอกว้างพอ แสดงแอปคู่กับแดชบอร์ด
+   ───────────────────────────────────────────────────────────────────
+   ไม่แตะโครงสร้าง #app เลย แค่เพิ่มแผงข้าง ๆ
+   ทำให้ทุกอย่างในแอป (overlay, ฟอร์ม, สแกน QR) ทำงานเหมือนเดิมทุกประการ
+   บนมือถือคลาสนี้ไม่ถูกใส่ จึงไม่กระทบอะไร
+═══════════════════════════════════════════════════════════════════ */
+body.sx-desk{
+  display:flex; align-items:stretch; justify-content:flex-start;
+  background:#0D47A1;
+}
+body.sx-desk #app{
+  flex:0 0 430px; max-width:430px; margin:0;
+  box-shadow:4px 0 24px rgba(0,0,0,.28); z-index:2;
+}
+/* แผงขวา — แดชบอร์ด */
+#sx-desk{
+  flex:1; min-width:0; display:none; flex-direction:column;
+  background:#EEF1F6; position:relative;
+}
+body.sx-desk #sx-desk{ display:flex }
+.sx-desk-bar{
+  height:46px; flex-shrink:0; display:flex; align-items:center; gap:10px;
+  padding:0 14px; background:linear-gradient(135deg,#0D47A1,#1565C0);
+  color:#fff; box-shadow:0 2px 10px rgba(0,0,0,.18); z-index:1;
+}
+.sx-desk-t{ font-size:.9rem; font-weight:800; font-family:'Kanit','IBM Plex Sans Thai',sans-serif }
+.sx-desk-s{ font-size:.7rem; color:rgba(255,255,255,.7) }
+.sx-desk-btn{
+  margin-left:auto; border:1.5px solid rgba(255,255,255,.3); background:rgba(255,255,255,.16);
+  color:#fff; border-radius:9px; padding:6px 13px; cursor:pointer;
+  font-family:inherit; font-size:.76rem; font-weight:700;
+}
+.sx-desk-btn:hover{ background:rgba(255,255,255,.28) }
+#sx-desk iframe{ flex:1; width:100%; border:none; background:#EEF1F6 }
+/* แผ่นเลื่อนขึ้น/ข้อความ/แถบติดตั้ง ต้องอยู่ตรงกลางคอลัมน์แอป ไม่ใช่กลางจอ */
+body.sx-desk .bsh{ left:215px }
+body.sx-desk #toast-wrap{ left:215px }
+body.sx-desk #sx-install{ left:10px; right:auto; width:410px }
+body.sx-desk #offline-banner{ left:0; right:auto; width:430px; margin:0 }
+/* ปุ่มสลับโหมด — ลอยมุมขวาบน เห็นเฉพาะจอกว้าง */
+#sx-mode{
+  position:fixed; top:10px; right:14px; z-index:9997; display:none;
+  align-items:center; gap:7px; border:1.5px solid rgba(255,255,255,.34);
+  background:rgba(255,255,255,.16); backdrop-filter:blur(8px);
+  color:#fff; border-radius:99px; padding:7px 15px; cursor:pointer;
+  font-family:'IBM Plex Sans Thai','Kanit',sans-serif; font-size:.76rem; font-weight:700;
+  box-shadow:0 3px 12px rgba(0,0,0,.22);
+}
+#sx-mode:hover{ background:rgba(255,255,255,.3) }
+@media (min-width:1100px){ #sx-mode{ display:flex } }
+
 /* ── Language Switcher ── */
 .lang-wrap{position:relative;flex-shrink:0}
 .lang-btn{
@@ -4618,6 +4671,117 @@ const SXInstall = (() => {
   return { go, bar, status, testLocal, installed, isIOS, diagnose };
 })();
 window.installApp = () => SXInstall.go();
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SXDesktop — โหมดคอม
+   ───────────────────────────────────────────────────────────────────────
+   จอกว้าง >= 1100px : แสดงแอป (คอลัมน์ซ้าย) คู่กับแดชบอร์ด (ฝั่งขวา)
+   จอแคบ / มือถือ    : ไม่ทำงานเลย ไม่มีผลใด ๆ
+
+   ออกแบบให้ไม่แตะ #app — แค่เพิ่ม element ข้าง ๆ
+   ฟอร์ม สแกน QR overlay ทุกอย่างจึงทำงานเหมือนเดิมทั้งหมด
+═══════════════════════════════════════════════════════════════════════ */
+const SXDesktop = (() => {
+  const MIN_W = 1100;
+  const KEY   = 'sx_desk_mode';
+  let on = false;
+
+  const wide  = () => window.innerWidth >= MIN_W;
+  const touch = () => ('ontouchstart' in window) && navigator.maxTouchPoints > 1;
+  /* จอกว้าง + ไม่ใช่จอสัมผัส = คอมจริง (แท็บเล็ตแนวนอนไม่นับ จอเล็กเกิน) */
+  const isPC  = () => wide() && !touch();
+
+  function panel() {
+    let el = document.getElementById('sx-desk');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'sx-desk';
+    el.innerHTML =
+      '<div class="sx-desk-bar">'
+      + '<div><div class="sx-desk-t">📊 แดชบอร์ด</div>'
+      + '<div class="sx-desk-s">อัปเดตอัตโนมัติทุก 60 วินาที</div></div>'
+      + '<button class="sx-desk-btn" onclick="SXDesktop.reload()">↻ รีเฟรช</button>'
+      + '<button class="sx-desk-btn" onclick="SXDesktop.off()">✕ ซ่อนแผงนี้</button>'
+      + '</div><iframe id="sx-desk-f" title="แดชบอร์ด" src="about:blank"></iframe>';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function btn() {
+    let b = document.getElementById('sx-mode');
+    if (b) return b;
+    b = document.createElement('button');
+    b.id = 'sx-mode';
+    b.onclick = toggle;
+    document.body.appendChild(b);
+    return b;
+  }
+
+  function label() {
+    const b = document.getElementById('sx-mode');
+    if (b) b.innerHTML = on ? '📱 โหมดมือถือ' : '🖥️ โหมดคอม';
+  }
+
+  function apply(state) {
+    on = !!state;
+    document.body.classList.toggle('sx-desk', on);
+    if (on) {
+      const f = panel().querySelector('#sx-desk-f');
+      if (f && (!f.src || f.src.indexOf('about:blank') >= 0)) {
+        f.src = 'starmark_dashboard.html?app=1&pane=1';
+      }
+    }
+    label();
+    try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
+    /* บอกแอปว่าขนาดเปลี่ยน เผื่อมีอะไรวัดความกว้างอยู่ */
+    setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }, 60);
+  }
+
+  function toggle() { apply(!on); }
+  function off()    { apply(false); }
+  function reload() {
+    const f = document.getElementById('sx-desk-f');
+    if (f) f.src = 'starmark_dashboard.html?app=1&pane=1&t=' + Date.now();
+  }
+
+  function init() {
+    if (!isPC()) return;          /* มือถือ/จอแคบ — ไม่ทำอะไรเลย */
+    btn();
+    let want;
+    try { want = localStorage.getItem(KEY); } catch (e) { want = null; }
+    /* เปิดเว็บบนคอมครั้งแรก -> เปิดโหมดคอมให้เลย (นั่นคือประโยชน์ของมัน)
+       ถ้าเคยกดปิดไว้ ก็เคารพความตั้งใจนั้น */
+    apply(want === null ? true : want === '1');
+  }
+
+  /* ย่อหน้าต่างจนแคบ -> ถอยกลับเป็นมือถืออัตโนมัติ ไม่ให้จอแตก */
+  let t = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const b = document.getElementById('sx-mode');
+      if (!wide()) {
+        if (on) { document.body.classList.remove('sx-desk'); on = false; label(); }
+        if (b) b.style.display = 'none';
+      } else if (isPC()) {
+        if (!b) { btn(); }
+        document.getElementById('sx-mode').style.display = 'flex';
+        let want; try { want = localStorage.getItem(KEY); } catch (e) { want = '1'; }
+        if (want !== '0' && !on) apply(true);
+      }
+    }, 220);
+  });
+
+  return { init, toggle, off, reload, isPC, isOn: () => on };
+})();
+
+/* เริ่มหลังแอปวาดหน้าเสร็จ */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(() => SXDesktop.init(), 2200));
+} else {
+  setTimeout(() => SXDesktop.init(), 2200);
+}
 
 const SXRealtime = (() => {
   let _ch = null, _on = false;

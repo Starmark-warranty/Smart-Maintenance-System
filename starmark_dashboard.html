@@ -577,6 +577,15 @@ const Dash = (() => {
   return { init, load, tab, setRange, filterMach };
 })();
 
+/* ถูกฝังในแผงข้างของโหมดคอม -> ย่อหัวเรื่องลง ไม่ให้ซ้ำกับแถบด้านบนของแผง */
+if (new URLSearchParams(location.search).get('pane') === '1') {
+  const st = document.createElement('style');
+  st.textContent = '.hd{padding:10px 0 16px;margin-bottom:-10px}'
+    + '.hd-logo{width:30px;height:30px;font-size:1rem}'
+    + '.hd-t{font-size:.95rem}.hd-s{font-size:.66rem}'
+    + '.tabs{margin:14px 0 12px}body{padding-bottom:24px}';
+  document.head.appendChild(st);
+}
 window.addEventListener('DOMContentLoaded', () => Dash.init());
 </script>
 </body>
