@@ -16,13 +16,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="application-name" content="STARMARK SB">
 <!-- Icons -->
-<link rel="icon" type="image/png" sizes="96x96" href="./icons/icon-96.png">
-<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
-<link rel="apple-touch-icon" href="./icons/icon-180.png">
-<link rel="apple-touch-icon" sizes="152x152" href="./icons/icon-152.png">
-<link rel="apple-touch-icon" sizes="167x167" href="./icons/icon-167.png">
-<link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="96x96" href="./icon-96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="./icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="./icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png">
 <title>STARMARK — Smart Maintenance v19-SB (ทดสอบ Supabase)</title>
 <style>
 /* ═══════════════════════════════════════════════════════════
@@ -1253,7 +1253,7 @@ button,.ni,.tile,.job-card,.quick-chip,.overlay-page,.screen,.page,
   background:rgba(30,30,30,.92);color:#fff;
   padding:10px 18px;border-radius:var(--r);font-size:.84rem;
   text-align:center;white-space:pre-wrap;box-shadow:var(--sh-lg);
-  animation:toastIn .3s var(--ease),toastOut .3s var(--ease) 2.5s forwards;
+  animation:toastIn .3s var(--ease);   /* เวลาจางหาย สั่งจาก JS ตาม duration */
   border-left:3px solid rgba(255,255,255,.3);
 }
 .toast.ok{background:rgba(27,94,32,.93);border-left-color:#A5D6A7}
@@ -4434,6 +4434,16 @@ const SXInstall = (() => {
       }
     } catch (e) {}
 
+    /* ไอคอนโหลดขึ้นจริงไหม — ถ้า 404 ระบบจะติดตั้งด้วยไอคอนสำรองของเบราว์เซอร์
+       (อาการ: ไอคอนบนหน้าจอเป็นตัวอักษรสีเทา มีโลโก้ Chrome มุมล่าง) */
+    let iconOK = false, iconMsg = 'ยังไม่ได้ตรวจ';
+    try {
+      const r = await fetch('./icon-192.png', { cache: 'no-store' });
+      if (r.ok && (r.headers.get('content-type') || '').includes('image')) {
+        iconOK = true; iconMsg = 'พบแล้ว';
+      } else iconMsg = r.ok ? 'ไม่ใช่ไฟล์รูป' : 'HTTP ' + r.status;
+    } catch (e) { iconMsg = 'โหลดไม่ได้'; }
+
     const ua   = navigator.userAgent;
     const edge = /Edg\//.test(ua);
     const chrome = /Chrome\//.test(ua) && !/OPR\/|Edg\//.test(ua);
@@ -4455,6 +4465,12 @@ const SXInstall = (() => {
       title = 'ไม่พบไฟล์ manifest.json';
       why   = 'ผลตรวจ: <b>' + manifestMsg + '</b><br>ไฟล์นี้เป็นตัวบอกเบราว์เซอร์ว่าติดตั้งเป็นแอปได้';
       how   = 'วาง <b>manifest.json</b> ไว้โฟลเดอร์เดียวกับหน้าเว็บนี้ พร้อมโฟลเดอร์ <b>icons/</b>';
+    } else if (!iconOK) {
+      title = 'ไม่พบไฟล์ไอคอน';
+      why   = 'ผลตรวจ <code>./icon-192.png</code> : <b>' + iconMsg + '</b><br>'
+            + 'ถ้าไม่มีไอคอน เบราว์เซอร์จะติดตั้งด้วยรูปสำรอง — เป็นตัวอักษรสีเทาที่มีโลโก้ Chrome มุมล่าง';
+      how   = 'อัปโหลดโฟลเดอร์ <b>icons/</b> (7 ไฟล์) ขึ้นไปไว้ที่เดียวกับ index.html<br>'
+            + 'แล้ว<b>ถอนการติดตั้งของเดิมออกก่อน</b> ค่อยติดตั้งใหม่ ไอคอนถึงจะเปลี่ยน';
     } else if (!swOK) {
       title = 'Service Worker ยังไม่ทำงาน';
       why   = 'ยังไม่พบ service worker ที่ลงทะเบียนไว้ — จำเป็นทั้งกับการติดตั้งและการแจ้งเตือน';
@@ -4472,6 +4488,7 @@ const SXInstall = (() => {
     const rows = [
       ['ที่อยู่เว็บ', isFile ? 'file:// ❌' : https ? location.protocol + ' ✅' : location.protocol + ' ❌'],
       ['manifest.json', manifestOK ? 'พบแล้ว ✅' : manifestMsg + ' ❌'],
+      ['ไอคอน icons/', iconOK ? 'พบแล้ว ✅' : iconMsg + ' ❌'],
       ['Service Worker', swOK ? 'ทำงานอยู่ ✅' : 'ยังไม่ทำงาน ❌'],
       ['เบราว์เซอร์', edge ? 'Edge ✅' : chrome ? 'Chrome ✅' : /Android/i.test(ua) ? 'Android ✅' : 'ไม่รองรับ ❌'],
     ];
@@ -4561,11 +4578,13 @@ const SXInstall = (() => {
   async function testLocal() {
     if (!('Notification' in window)) { Toast.show('เบราว์เซอร์ไม่รองรับ', 'err'); return; }
     if (Notification.permission !== 'granted') {
-      Toast.show('ยังไม่ได้อนุญาต — กดเปิดรับการแจ้งเตือนก่อน', 'warn', 4000); return; }
+      Toast.show('ยังไม่ได้อนุญาต — เข้าบัญชี แล้วกด "เปิดรับการแจ้งเตือน" ก่อน '
+        + '(ถ้าเคยกดแล้วแต่ขึ้นแบบนี้ แปลว่า Chrome ถอนสิทธิ์ไป ต้องกดเปิดใหม่)', 'warn', 10000);
+      return; }
     const reg = await navigator.serviceWorker.ready;
     await reg.showNotification('🔔 ทดสอบแจ้งเตือน STARMARK', {
       body: 'ถ้าเห็นข้อความนี้ = เครื่องนี้รับแจ้งเตือนได้แล้ว',
-      icon: './icons/icon-192.png', badge: './icons/icon-96.png',
+      icon: './icon-192.png', badge: './icon-96.png',
       tag: 'sm-test', vibrate: [100, 50, 100],
       data: { nav: 'home', type: 'test' },
     });
@@ -5334,17 +5353,33 @@ const CL_DATA = [
    MODULE: TOAST — multi-toast support
 ════════════════════════════════════════════════════════ */
 const Toast = (() => {
-  function show(msg, type = '', duration = 2800) {
+  /* duration = เวลาที่ข้อความค้างบนจอ (มิลลิวินาที) ก่อนเริ่มจางหาย
+     ค่าเริ่มต้น 5 วินาที — ของเดิม 2.8 วิ อ่านไม่ทัน โดยเฉพาะข้อความยาว */
+  function show(msg, type = '', duration = 5000) {
     const wrap = document.getElementById('toast-wrap');
-    const el   = document.createElement('div');
+    if (!wrap) return;
+    const el = document.createElement('div');
     el.className = 'toast' + (type ? ' ' + type : '');
-    el.textContent = Security.sanitizeText(msg, 200);
+    el.textContent = Security.sanitizeText(msg, 300);
+
+    /* ข้อความยาวให้เวลามากขึ้นเอง ~ อ่านได้ 13 ตัวอักษร/วินาที */
+    const need = Math.min(14000, Math.max(duration, el.textContent.length * 75 + 1800));
+
+    /* แตะเพื่อปิดเองได้ทันที ไม่ต้องรอ */
+    el.style.pointerEvents = 'auto';
+    el.style.cursor = 'pointer';
+    /* สั่งเวลาจางหายจากตรงนี้ — CSS ไม่ได้ตั้งไว้แล้ว */
+    el.style.animation = 'toastIn .3s var(--ease), toastOut .3s var(--ease) '
+                       + (need / 1000).toFixed(2) + 's forwards';
     wrap.appendChild(el);
-    const remove = () => { el.remove(); };
-    el.addEventListener('animationend', () => {
-      if (el.style.animationName !== 'toastIn') remove();
+
+    let gone = false;
+    const remove = () => { if (gone) return; gone = true; try { el.remove(); } catch (e) {} };
+    el.addEventListener('click', remove, { once: true });
+    el.addEventListener('animationend', (ev) => {
+      if (ev.animationName === 'toastOut') remove();
     });
-    setTimeout(remove, duration + 300);
+    setTimeout(remove, need + 600);
   }
 
   /* v3.8: Toast ที่กดได้ — สำหรับ notification ตอนแอปเปิดอยู่

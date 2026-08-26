@@ -11,7 +11,7 @@
       ที่นี่ใช้ network-first สำหรับหน้าเว็บ และ cache-first เฉพาะไอคอน
 ═══════════════════════════════════════════════════════════════════════ */
 
-const VER   = 'starmark-v2.0.0';
+const VER   = 'starmark-v2.0.1';
 const SHELL = VER + '-shell';
 
 /* ── Firebase (compat build เท่านั้น ใช้ใน service worker ได้) ── */
@@ -51,8 +51,8 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(title, {
     body,
-    icon:  './icons/icon-192.png',
-    badge: './icons/icon-96.png',
+    icon:  './icon-192.png',
+    badge: './icon-96.png',
     tag:   d.tag || ('sm-' + (d.type || 'info')),
     renotify: true,
     requireInteraction: false,
@@ -87,12 +87,12 @@ self.addEventListener('notificationclick', (e) => {
 /* ═══ 3. แคชเปลือกแอป ═══ */
 const SHELL_FILES = [
   './manifest.json',
-  './icons/icon-96.png',
-  './icons/icon-152.png',
-  './icons/icon-167.png',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icon-96.png',
+  './icon-152.png',
+  './icon-167.png',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
