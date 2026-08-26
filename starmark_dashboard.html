@@ -42,11 +42,26 @@ body{
 .hd-logo{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
 .hd-t{font-family:'Kanit',sans-serif;font-size:1.15rem;font-weight:800;letter-spacing:.02em}
 .hd-s{font-size:.72rem;color:rgba(255,255,255,.72);margin-top:1px}
-.hd-live{margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.24);border-radius:99px;padding:5px 12px;font-size:.7rem;font-weight:700}
-.dot{width:7px;height:7px;border-radius:50%;background:#A5D6A7;box-shadow:0 0 0 3px rgba(165,214,167,.25)}
-.dot.off{background:#EF9A9A;box-shadow:0 0 0 3px rgba(239,154,154,.25)}
-.dot.load{background:#FFD54F;animation:pulse .9s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* ป้ายสถานะ — ล็อกความสูงและความกว้างตายตัว
+   ของเดิมปล่อยให้ flex คำนวณเอง แล้วบวมเป็นวงกลมใหญ่ */
+.hd-live{
+  margin-left:auto; flex:0 0 auto;
+  display:inline-flex; align-items:center; gap:7px;
+  height:26px; padding:0 12px; box-sizing:border-box;
+  background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.24);
+  border-radius:13px;
+  font-size:.7rem; font-weight:700; line-height:1;
+  white-space:nowrap; overflow:hidden; max-width:190px;
+}
+#live-txt{ overflow:hidden; text-overflow:ellipsis; line-height:1 }
+.dot{
+  flex:0 0 8px; width:8px; height:8px;
+  min-width:8px; max-width:8px; min-height:8px; max-height:8px;
+  border-radius:50%; background:#A5D6A7; align-self:center;
+}
+.dot.off { background:#EF9A9A }
+.dot.load{ background:#FFD54F; animation:pulse .9s ease-in-out infinite }
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 /* ── tabs ── */
 .tabs{display:flex;gap:6px;background:var(--card);border-radius:14px;padding:6px;box-shadow:var(--sh);margin:20px 0 14px;overflow-x:auto}
@@ -168,7 +183,7 @@ tbody tr:hover{background:#FAFCFF}
       <div class="hd-t">STARMARK Dashboard</div>
       <div class="hd-s" id="hd-sub">กำลังเชื่อมต่อ…</div>
     </div>
-    <div class="hd-live"><span class="dot load" id="live-dot"></span><span id="live-txt">เชื่อมต่อ…</span></div>
+    <div class="hd-live"><span class="dot load" id="live-dot"></span><span id="live-txt">กำลังต่อ…</span></div>
   </div>
 </div>
 
@@ -237,7 +252,7 @@ const Dash = (() => {
       out = out.concat(data||[]);
       if(!data || data.length < SIZE) break;
       from += SIZE;
-      setLive('load', 'โหลด '+out.length.toLocaleString()+' แถว…');
+      setLive('load', out.length.toLocaleString() + ' แถว…');
     }
     return out;
   }
@@ -263,7 +278,7 @@ const Dash = (() => {
     const from  = days ? daysAgo(days) : today;
     const pool  = $('f-pool').value;
 
-    setLive('load','กำลังดึงข้อมูล…');
+    setLive('load','กำลังโหลด…');
 
     const [mach, pm, jobs] = await Promise.all([
       all(()=> d.from('machines')
@@ -546,7 +561,7 @@ const Dash = (() => {
         });
       }
       $('hd-sub').textContent = `${cache.machines.length} เครื่อง · ${cache.pm.length.toLocaleString()} บันทึก PM · ${cache.jobs.length} งานซ่อม`;
-      setLive('ok','เชื่อมต่อแล้ว');
+      setLive('ok','พร้อมใช้งาน');
       render();
     }catch(e){
       console.error('[Dashboard]', e);
