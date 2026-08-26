@@ -4395,10 +4395,7 @@ const SXInstall = (() => {
 
     if (isIOS()) { iosHelp(); return; }
 
-    if (!prompt_) {
-      Toast.show('เบราว์เซอร์นี้ยังไม่พร้อมติดตั้ง — ลองใช้ Chrome', 'warn', 4000);
-      return;
-    }
+    if (!prompt_) { await diagnose(); return; }
     prompt_.prompt();
     const { outcome } = await prompt_.userChoice;
     prompt_ = null;
@@ -4407,6 +4404,101 @@ const SXInstall = (() => {
       if (el) el.remove();
       Toast.show('✅ ติดตั้งสำเร็จ — เปิดจากไอคอนบนหน้าจอได้เลย', 'ok', 5000);
     }
+  }
+
+  /* ── หาสาเหตุจริงว่าทำไมเบราว์เซอร์ยังไม่ยอมให้ติดตั้ง ──
+     Chrome จะยิง beforeinstallprompt ก็ต่อเมื่อครบเงื่อนไขทุกข้อ
+     ถ้าขาดข้อไหน ต้องบอกให้ตรงจุด ไม่ใช่โทษว่า "ไม่ใช่ Chrome" */
+  async function diagnose() {
+    const https = location.protocol === 'https:' ||
+                  ['localhost', '127.0.0.1'].includes(location.hostname);
+    const isFile = location.protocol === 'file:';
+
+    /* manifest โหลดขึ้นจริงไหม (404 = ติดตั้งไม่ได้) */
+    let manifestOK = false, manifestMsg = 'ไม่พบไฟล์';
+    try {
+      const link = document.querySelector('link[rel="manifest"]');
+      if (link) {
+        const r = await fetch(link.href, { cache: 'no-store' });
+        if (r.ok) { await r.json(); manifestOK = true; manifestMsg = 'พบแล้ว'; }
+        else manifestMsg = 'HTTP ' + r.status;
+      } else manifestMsg = 'ไม่มี <link rel=manifest>';
+    } catch (e) { manifestMsg = (e && e.message) || 'อ่านไม่ได้'; }
+
+    /* service worker ลงทะเบียนสำเร็จไหม */
+    let swOK = false;
+    try {
+      if ('serviceWorker' in navigator) {
+        const rs = await navigator.serviceWorker.getRegistrations();
+        swOK = rs.length > 0;
+      }
+    } catch (e) {}
+
+    const ua   = navigator.userAgent;
+    const edge = /Edg\//.test(ua);
+    const chrome = /Chrome\//.test(ua) && !/OPR\/|Edg\//.test(ua);
+    const canInstall = chrome || edge || /Android/i.test(ua);
+
+    /* หาสาเหตุแรกที่ขาด แล้วบอกวิธีแก้ให้ตรงจุด */
+    let title, why, how;
+    if (installed()) {
+      Toast.show('✅ ติดตั้งเป็นแอปแล้ว', 'ok'); return;
+    } else if (isFile) {
+      title = 'เปิดจากไฟล์ในเครื่องอยู่';
+      why   = 'ตอนนี้เปิดแบบ <b>file://</b> (ดับเบิลคลิกไฟล์) ซึ่งเบราว์เซอร์ห้ามติดตั้งเป็นแอป และห้ามใช้การแจ้งเตือนด้วย';
+      how   = 'ต้องเปิดผ่านเว็บ <b>https://</b> เช่น Netlify หรือ GitHub Pages<br>หรือรันเซิร์ฟเวอร์ในเครื่อง: <code>python -m http.server 8000</code> แล้วเปิด <code>http://localhost:8000</code>';
+    } else if (!https) {
+      title = 'ยังไม่ได้ใช้ HTTPS';
+      why   = 'ที่อยู่ปัจจุบันเป็น <b>' + location.protocol + '</b> — ติดตั้งเป็นแอปได้เฉพาะ https:// หรือ localhost';
+      how   = 'เปิดเว็บผ่าน https:// แล้วลองใหม่';
+    } else if (!manifestOK) {
+      title = 'ไม่พบไฟล์ manifest.json';
+      why   = 'ผลตรวจ: <b>' + manifestMsg + '</b><br>ไฟล์นี้เป็นตัวบอกเบราว์เซอร์ว่าติดตั้งเป็นแอปได้';
+      how   = 'วาง <b>manifest.json</b> ไว้โฟลเดอร์เดียวกับหน้าเว็บนี้ พร้อมโฟลเดอร์ <b>icons/</b>';
+    } else if (!swOK) {
+      title = 'Service Worker ยังไม่ทำงาน';
+      why   = 'ยังไม่พบ service worker ที่ลงทะเบียนไว้ — จำเป็นทั้งกับการติดตั้งและการแจ้งเตือน';
+      how   = 'วาง <b>sw.js</b> ไว้โฟลเดอร์เดียวกัน แล้วรีเฟรชหน้า (Ctrl+Shift+R)';
+    } else if (!canInstall) {
+      title = 'เบราว์เซอร์นี้ติดตั้งไม่ได้';
+      why   = 'Firefox และ Safari บนคอมยังไม่รองรับการติดตั้งเว็บเป็นแอป';
+      how   = 'เปิดด้วย <b>Chrome</b> หรือ <b>Edge</b> แทน';
+    } else {
+      title = 'พร้อมแล้ว แต่ยังติดตั้งไม่ได้ตอนนี้';
+      why   = 'ทุกอย่างครบแล้ว แต่ Chrome ยังไม่ยื่นข้อเสนอติดตั้ง — มักเกิดตอนเพิ่งเปิดเว็บครั้งแรก หรือเคยกดปฏิเสธไปแล้ว';
+      how   = 'ติดตั้งด้วยมือได้เลย:<br>• <b>คอม</b> — กดไอคอน ⊕ ท้ายช่องที่อยู่เว็บ หรือเมนู ⋮ → ติดตั้ง…<br>• <b>Android</b> — เมนู ⋮ → เพิ่มลงในหน้าจอหลัก<br><br>หรือใช้งานสักครู่แล้วกดปุ่มนี้อีกครั้ง';
+    }
+
+    const rows = [
+      ['ที่อยู่เว็บ', isFile ? 'file:// ❌' : https ? location.protocol + ' ✅' : location.protocol + ' ❌'],
+      ['manifest.json', manifestOK ? 'พบแล้ว ✅' : manifestMsg + ' ❌'],
+      ['Service Worker', swOK ? 'ทำงานอยู่ ✅' : 'ยังไม่ทำงาน ❌'],
+      ['เบราว์เซอร์', edge ? 'Edge ✅' : chrome ? 'Chrome ✅' : /Android/i.test(ua) ? 'Android ✅' : 'ไม่รองรับ ❌'],
+    ];
+
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.62);'
+      + 'display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;'
+      + "font-family:'IBM Plex Sans Thai','Kanit',sans-serif";
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:22px;max-width:420px;width:100%">'
+      + '<div style="font-size:1.02rem;font-weight:900;color:#1A237E;margin-bottom:6px">📲 ' + title + '</div>'
+      + '<div style="font-size:.82rem;color:#455A64;line-height:1.6;margin-bottom:14px">' + why + '</div>'
+      + '<div style="background:#E3F2FD;border-radius:12px;padding:12px 14px;font-size:.8rem;'
+      +   'color:#0D47A1;line-height:1.7;margin-bottom:14px"><b>วิธีแก้</b><br>' + how + '</div>'
+      + '<div style="background:#F7F9FC;border-radius:12px;padding:10px 13px;margin-bottom:16px">'
+      +   '<div style="font-size:.7rem;font-weight:800;color:#78909C;margin-bottom:6px">ผลตรวจระบบ</div>'
+      +   rows.map(function (r) {
+            return '<div style="display:flex;justify-content:space-between;font-size:.75rem;'
+              + 'padding:3px 0;color:#37474F"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>';
+          }).join('')
+      + '</div>'
+      + '<button id="sx-dg-x" style="width:100%;border:none;border-radius:12px;padding:13px;'
+      +   'background:#1565C0;color:#fff;font-family:inherit;font-size:.9rem;font-weight:800;cursor:pointer">'
+      +   'เข้าใจแล้ว</button></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#sx-dg-x').onclick = function () { ov.remove(); };
+    ov.onclick = function (e) { if (e.target === ov) ov.remove(); };
   }
 
   /* iOS ไม่มี API ติดตั้ง ต้องสอนด้วยมือ */
@@ -4480,18 +4572,31 @@ const SXInstall = (() => {
     Toast.show('✅ ส่งแจ้งเตือนทดสอบแล้ว', 'ok');
   }
 
+  /* นับจำนวนครั้งที่เปิดแอป — ไม่เด้งชวนติดตั้งตั้งแต่ครั้งแรก
+     ให้ผู้ใช้ได้ลองใช้ก่อน แล้วค่อยชวน จะกดรับมากกว่า */
+  function visits() {
+    try {
+      const n = (parseInt(localStorage.getItem('sx_visits') || '0', 10) || 0) + 1;
+      localStorage.setItem('sx_visits', String(n));
+      return n;
+    } catch (e) { return 2; }
+  }
+  const VISIT = visits();
+  const DELAY_ANDROID = 45000;   /* 45 วิ */
+  const DELAY_IOS     = 60000;   /* 60 วิ — iOS ต้องอ่านวิธีติดตั้ง ให้เวลาตั้งตัวมากกว่า */
+
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault(); prompt_ = e;
-    setTimeout(bar, 2500);
+    if (VISIT >= 2) setTimeout(bar, DELAY_ANDROID);
   });
   window.addEventListener('appinstalled', () => {
     const el = document.getElementById('sx-install'); if (el) el.remove();
     Toast.show('✅ ติดตั้งแล้ว — เปิดจากไอคอนบนหน้าจอ', 'ok', 5000);
   });
-  /* iOS: ไม่มี event ให้รอ -> โชว์เองหลังเข้าระบบสักพัก */
-  setTimeout(() => { if (isIOS()) bar(); }, 6000);
+  /* iOS: ไม่มี event ให้รอ -> โชว์เองหลังใช้งานไปสักพัก */
+  if (VISIT >= 2) setTimeout(() => { if (isIOS()) bar(); }, DELAY_IOS);
 
-  return { go, bar, status, testLocal, installed, isIOS };
+  return { go, bar, status, testLocal, installed, isIOS, diagnose };
 })();
 window.installApp = () => SXInstall.go();
 
