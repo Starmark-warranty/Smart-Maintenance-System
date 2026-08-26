@@ -4223,24 +4223,47 @@ async function _route(db, a, p) {
 
   /* ═══════ Dashboard ═══════ */
   case 'getDashboardSummary': {
+    /* ชื่อฟิลด์ตรงนี้ต้องตรงกับที่ DashboardSync._applyData() อ่าน เป๊ะ ๆ:
+       stats.byStatus{normal,broken,repair,idle} · stats.missedPM
+       stats.donePM · stats.totalMachines · res.missedByLine{line:[{machineId,name}]} */
     const today = _todayTH();
     const [mAll, pmToday, jOpen] = await Promise.all([
-      db.from('machines').select('id', { count: 'exact', head: true }).eq('status','active'),
-      db.from('pm_records').select('machine_id').eq('pm_date', today),
+      db.from('machines').select('id,name,line').eq('status', 'active'),
+      db.from('pm_records').select('machine_id,machine_status').eq('pm_date', today),
       db.from('jobs').select('id', { count: 'exact', head: true })
         .not('status', 'in', '("done","closed")'),
     ]);
-    const total = mAll.count || 0;
-    const doneSet = new Set((pmToday.data || []).map(r => r.machine_id));
+    if (mAll.error) throw mAll.error;
+    const machines = mAll.data || [];
+    const total = machines.length;
+
+    /* นับสถานะเครื่องจากผล PM วันนี้ · เครื่องเดิมทำซ้ำนับครั้งเดียว (เอาอันล่าสุด) */
+    const statusOf = {};
+    (pmToday.data || []).forEach(r => { statusOf[r.machine_id] = r.machine_status || 'normal'; });
+    const byStatus = { normal: 0, broken: 0, repair: 0, idle: 0 };
+    Object.values(statusOf).forEach(st => {
+      if (byStatus[st] === undefined) byStatus.normal++; else byStatus[st]++;
+    });
+
+    /* เครื่องที่ยังไม่ได้ทำ PM วันนี้ แยกตามไลน์ */
+    const missedByLine = {};
+    let missed = 0;
+    machines.forEach(m => {
+      if (statusOf[m.id] !== undefined) return;
+      missed++;
+      const ln = m.line || 'ไม่ระบุ';
+      (missedByLine[ln] = missedByLine[ln] || []).push({ machineId: m.id, name: m.name || '' });
+    });
+
+    const donePM = Object.keys(statusOf).length;
     const stats = {
       totalMachines: total,
-      doneToday: doneSet.size,
-      notDoneToday: Math.max(total - doneSet.size, 0),
-      compliancePct: total ? Math.round(doneSet.size * 100 / total) : 0,
+      donePM, missedPM: missed, byStatus,
       pendingJobs: jOpen.count || 0,
+      compliancePct: total ? Math.round(donePM * 100 / total) : 0,
+      doneToday: donePM, notDoneToday: missed,
     };
-    /* หน้าเว็บอ่าน res.stats */
-    return { ok: true, stats, summary: stats };
+    return { ok: true, stats, missedByLine, summary: stats };
   }
 
   /* ═══════ ส่ง push — ทำใน Supabase ไม่ได้ ═══════
