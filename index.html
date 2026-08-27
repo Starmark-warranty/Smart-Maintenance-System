@@ -4774,6 +4774,7 @@ window.installApp = () => SXInstall.go();
 const SXDesktop = (() => {
   const MIN_W = 1100;
   const KEY   = 'sx_desk_mode';
+  const DASH_VER = '2';        /* ขึ้นเลขนี้เมื่อแก้ไฟล์แดชบอร์ด */
   let on = false;
 
   const wide  = () => window.innerWidth >= MIN_W;
@@ -4819,7 +4820,14 @@ const SXDesktop = (() => {
     if (on) {
       const f = panel().querySelector('#sx-desk-f');
       if (f && (!f.src || f.src.indexOf('about:blank') >= 0)) {
-        f.src = 'starmark_dashboard.html?app=1&pane=1';
+        /* เติมเลขเวอร์ชันท้าย URL — กันเบราว์เซอร์หยิบไฟล์เก่าจากแคชมาใช้
+           ขึ้นเลขนี้ทุกครั้งที่แก้ starmark_dashboard.html
+
+           ⚠️ ไม่ส่ง app=1 ตรงนี้โดยตั้งใจ
+              โค้ดในแดชบอร์ดใช้ app=1 เป็นสัญญาณให้ซ่อนแท็บ "จัดการ PR-PO"
+              กับ "ตั้งค่า" (เจตนาเดิมคือซ่อนตอนเปิดบนจอมือถือ)
+              แผงนี้อยู่บนคอมจอกว้าง จึงควรเห็นครบทุกแท็บ */
+        f.src = 'starmark_dashboard.html?pane=1&v=' + DASH_VER;
       }
     }
     label();
@@ -4832,7 +4840,7 @@ const SXDesktop = (() => {
   function off()    { apply(false); }
   function reload() {
     const f = document.getElementById('sx-desk-f');
-    if (f) f.src = 'starmark_dashboard.html?app=1&pane=1&t=' + Date.now();
+    if (f) f.src = 'starmark_dashboard.html?pane=1&t=' + Date.now();
   }
 
   function init() {
@@ -8281,7 +8289,12 @@ const Renderer = (() => {
   /* v3.22: เปิด/ปิด แดชบอร์ด (ฝัง starmark_dashboard.html — ต้อง deploy คู่กันบน Netlify) */
   function openDashboard(){
     var f=document.getElementById('dash-frame');
-    if(f && (!f.src || f.src.indexOf('about:blank')>=0)) f.src='starmark_dashboard.html?app=1';
+    if(f && (!f.src || f.src.indexOf('about:blank')>=0)){
+      /* จอแคบ (มือถือ) -> ส่ง app=1 ซ่อนแท็บ PR-PO/ตั้งค่า ตามเจตนาเดิม
+         จอกว้าง (คอม)  -> ไม่ส่ง เห็นครบทุกแท็บ */
+      var _narrow = window.innerWidth < 1100;
+      f.src = 'starmark_dashboard.html?' + (_narrow ? 'app=1&' : '') + 'v=2';
+    }
     UI.openOverlay('op-dashboard','📊 แดชบอร์ด');
   }
   function closeDashboard(){ UI.closeOverlay('op-dashboard'); }
