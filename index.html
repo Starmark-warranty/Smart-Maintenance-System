@@ -4062,11 +4062,17 @@ async function _route(db, a, p) {
 
   case 'register': {
     const u = p.user || {};
-    die(await db.from('users').insert({
-      emp_id: String(u.empid || '').trim(), full_name: u.name, phone: u.phone,
-      role: u.role || 'user', password_hash: u.password || null,
+    const eid = String(u.empid || '').trim();
+    if (BLOCKED_EMPIDS.indexOf(eid) >= 0)
+      return { ok: false, error: 'รหัสนี้เป็นตัวอย่างรูปแบบ ใช้สร้างบัญชีไม่ได้' };
+    die(await db.from('users').upsert({
+      emp_id: eid, full_name: u.name, phone: u.phone,
+      role: u.role || 'requester', password_hash: u.password || eid,
       position: u.position || null, pool: u.pool || null,
-    }));
+    }, { onConflict: 'emp_id' }));
+    /* ส่งเข้าชีทระบบเก่าทันที ไม่งั้นรอบซิงก์ถัดไปจะมองว่าคนนี้ถูกลบ
+       แล้วลบออกจาก Supabase (เพราะชีทคือทะเบียนหลัก) */
+    SXPush.after({ action: 'register', user: Object.assign({}, u, { empid: eid }) });
     return { ok: true };
   }
 
