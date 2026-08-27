@@ -3862,6 +3862,85 @@ const Security = (() => {
    ██████████████████████████████████████████████████████
 ════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════════════════
+   SXPush — ส่งสิ่งที่บันทึกในแอปใหม่ กลับเข้าชีทของระบบเก่า
+   ───────────────────────────────────────────────────────────────────────
+   หลักการ: "ไม่เขียนชีทเอง" แต่สั่งให้ Apps Script ของระบบเก่าเขียนให้
+   จึงได้ของฟรีมาสามอย่าง
+     1. ไม่ต้องแมป 87 คอลัมน์เอง — โค้ดเดิมจัดการ ถูกเสมอ
+     2. ใช้ LockService ของระบบเก่า เข้าคิวปกติ ไม่มีแถวทับกัน
+     3. ไม่ต้องแก้ Apps Script เลยสักบรรทัด
+
+   ไม่เกิดข้อมูลซ้ำ เพราะระบบเก่าใช้ rec.id ที่เราส่งไป
+   (Code.gs: const id = rec.id || ('PM' + ...))  ทั้งสองฝั่งจึงใช้รหัสเดียวกัน
+
+   ⚠️ กินโควตาของระบบเก่า 1 execution ต่อการบันทึก 1 ครั้ง
+      วันที่ย้ายมาใช้จริงทั้งโรงงาน ให้ปิดสวิตช์นี้
+═══════════════════════════════════════════════════════════════════════ */
+const DUAL_WRITE = true;          /* ← สวิตช์ ปิดเป็น false ได้ทันที */
+
+const SXPush = (() => {
+  const KEY = 'sx_push_queue';
+
+  function queue() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; }
+  }
+  function save(q) {
+    try { localStorage.setItem(KEY, JSON.stringify(q.slice(-200))); } catch (e) {}
+  }
+
+  /* ยิงไประบบเก่า 1 รายการ — คืน true เมื่อชีทรับแล้ว */
+  async function send(payload) {
+    const r = await window._callGAS(payload);
+    return !!(r && r.ok);
+  }
+
+  /* เรียกตอนบันทึกสำเร็จใน Supabase
+     ไม่ await ในเส้นทางหลัก ผู้ใช้จึงไม่ต้องรอระบบเก่า */
+  function after(payload) {
+    if (!DUAL_WRITE) return;
+    send(payload).then((ok) => {
+      if (ok) { console.log('[SXPush] ✅ เข้าชีทแล้ว', payload.action); return; }
+      throw new Error('ระบบเก่าตอบว่าไม่สำเร็จ');
+    }).catch((e) => {
+      console.warn('[SXPush] ⏳ เข้าชีทไม่ได้ เก็บเข้าคิวไว้:', e && e.message);
+      const q = queue();
+      q.push({ at: Date.now(), payload });
+      save(q);
+      try { Toast.show('บันทึกแล้ว แต่ยังไม่เข้าชีทระบบเก่า — จะลองใหม่ให้', 'warn'); } catch (_) {}
+    });
+  }
+
+  /* ลองส่งของค้างในคิวใหม่ */
+  async function flush(silent) {
+    const q = queue();
+    if (!q.length) {
+      if (!silent) { try { Toast.show('ไม่มีรายการค้าง', 'ok'); } catch (e) {} }
+      return { done: 0, left: 0 };
+    }
+    const left = [];
+    let done = 0;
+    for (const it of q) {
+      try {
+        if (await send(it.payload)) { done++; continue; }
+        left.push(it);
+      } catch (e) { left.push(it); }
+    }
+    save(left);
+    const msg = 'ส่งเข้าชีทสำเร็จ ' + done + (left.length ? ' · ค้างอีก ' + left.length : '');
+    console.log('[SXPush]', msg);
+    if (!silent) { try { Toast.show((left.length ? '⚠️ ' : '✅ ') + msg, left.length ? 'warn' : 'ok'); } catch (e) {} }
+    return { done, left: left.length };
+  }
+
+  function pending() { return queue().length; }
+
+  /* ลองส่งของค้างทุก 3 นาที เมื่อหน้าเปิดอยู่ */
+  setInterval(() => { if (!document.hidden && queue().length) flush(true); }, 180000);
+
+  return { after, flush, pending };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
    STARMARK — SupabaseBridge v1.0
    ตัวแทน _call() ของ SheetsBridge · รองรับ 29 actions ที่หน้าเว็บเรียกจริง
    ───────────────────────────────────────────────────────────────────────
@@ -4100,6 +4179,8 @@ async function _route(db, a, p) {
   case 'savePMRecord': {
     const r = p.record || {};
     if (!r.machineId) return { ok: false, error: 'machineId_required' };
+    /* สร้างรหัสที่นี่แล้วส่งรหัสเดียวกันไปทั้ง Supabase และชีท
+       ระบบเก่าใช้ rec.id ที่ส่งไป จึงไม่เกิดรายการซ้ำสองรหัส */
     const id = r.id || ('PM' + Date.now().toString(36));
     die(await db.from('pm_records').insert({
       id,
@@ -4113,6 +4194,8 @@ async function _route(db, a, p) {
       note: r.note || null,
       item_statuses: r.itemStatuses || [],
     }));
+    /* ส่งต่อให้ระบบเก่าเขียนลงชีทด้วยโค้ดของมันเอง (ไม่รอผล) */
+    SXPush.after({ action: 'savePMRecord', record: Object.assign({}, r, { id }) });
     return { ok: true, id };
   }
 
@@ -4181,6 +4264,7 @@ async function _route(db, a, p) {
     if (a === 'createJob') { row.created_at = row.created_at || new Date().toISOString(); }
     row.updated_at = new Date().toISOString();
     const saved = die(await db.from('jobs').upsert(row).select().single());
+    SXPush.after({ action: a, job: Object.assign({}, j, { id }) });
     return { ok: true, job: _jobOut(saved) };
   }
 
@@ -4211,6 +4295,7 @@ async function _route(db, a, p) {
       id: 'ASN' + Date.now().toString(36), job_id: p.jobId,
       assigned_to: tid, assigned_name: tname,
       assigned_by: p.assignedBy || p.byId || p.empid || '', assigned_at: now, status: 'assigned' }));
+    SXPush.after(p);
     return { ok: true };
   }
 
@@ -4398,6 +4483,8 @@ function _jobIn(j, id) {
    ═══════════════════════════════════════════════════════════════════════ */
 
 
+
+
 /* ═══════════════════════════════════════════════════════════════════════
    SXPull — ดึงข้อมูลจากระบบเก่า (Google Sheets) เข้า Supabase ตามคำสั่ง
    ───────────────────────────────────────────────────────────────────────
@@ -4407,8 +4494,8 @@ function _jobIn(j, id) {
    ตั้งค่า SYNC_CFG ก่อนใช้ — เอา URL กับรหัสลับจากโปรเจกต์นั้น
 ═══════════════════════════════════════════════════════════════════════ */
 const SYNC_CFG = {
-  url:   'https://script.google.com/macros/s/AKfycbx5Qzez7F8L1U3ibnq2pkaqg0AaXz3B8h3wKGgAbWKMKK3em5csgiGMnxQXcWALlEX3/exec',                       /* URL ที่ลงท้าย /exec ของโปรเจกต์ซิงก์ */
-  token: '1234'                        /* รหัสลับที่ตั้งไว้ใน CFG.token */
+  url:   '',                       /* URL ที่ลงท้าย /exec ของโปรเจกต์ซิงก์ */
+  token: ''                        /* รหัสลับที่ตั้งไว้ใน CFG.token */
 };
 
 const SXPull = (() => {
@@ -7749,6 +7836,15 @@ const Renderer = (() => {
             <div class="sync-btn-info">
               <div class="sync-btn-label">${T('sync.pull.title','ซิงค์จากฐานข้อมูลหลัก')}</div>
               <div class="sync-btn-sub">${T('sync.pull.sub','ดึงข้อมูลล่าสุดจาก Google Sheets มาอัพเดทในเครื่อง')}</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <button class="sync-btn primary-sync" onclick="SXPush.flush()" type="button"
+                  style="border-color:#FFB74D;background:linear-gradient(135deg,#FFF3E0,#FFF8E1)">
+            <div class="sync-btn-icon">⬆️</div>
+            <div class="sync-btn-info">
+              <div class="sync-btn-label">ส่งรายการค้างเข้าชีท</div>
+              <div class="sync-btn-sub">ลองส่งสิ่งที่บันทึกในแอปนี้กลับเข้าระบบเก่าอีกครั้ง</div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </button>
