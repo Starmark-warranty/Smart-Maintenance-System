@@ -4500,8 +4500,10 @@ function _jobIn(j, id) {
    ตั้งค่า SYNC_CFG ก่อนใช้ — เอา URL กับรหัสลับจากโปรเจกต์นั้น
 ═══════════════════════════════════════════════════════════════════════ */
 const SYNC_CFG = {
-  url:   '',                       /* URL ที่ลงท้าย /exec ของโปรเจกต์ซิงก์ */
-  token: ''                        /* รหัสลับที่ตั้งไว้ใน CFG.token */
+  /* ⬇️ เหลือใส่ค่าเดียว — URL ที่ได้จากตอน Deploy โปรเจกต์ซิงก์
+        Deploy > New deployment > Web app -> คัดลอกเส้นที่ลงท้าย /exec */
+  url:   '',
+  token: 'sk_npPVB5LMdYLb6N6mfoFCQbbaqZrj'   /* ต้องตรงกับ CFG.token ในไฟล์ .gs */
 };
 
 const SXPull = (() => {
@@ -7837,23 +7839,10 @@ const Renderer = (() => {
           <div>${S.escape(sheetsLabel)}</div>
         </div>
         <div class="sync-btn-row">
-          <button class="sync-btn primary-sync" onclick="DataMgr.syncNow()" type="button">
-            <div class="sync-btn-icon">🔄</div>
-            <div class="sync-btn-info">
-              <div class="sync-btn-label">${T('sync.pull.title','ซิงค์จากฐานข้อมูลหลัก')}</div>
-              <div class="sync-btn-sub">${T('sync.pull.sub','ดึงข้อมูลล่าสุดจาก Google Sheets มาอัพเดทในเครื่อง')}</div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
-          </button>
-          <button class="sync-btn primary-sync" onclick="SXPush.flush()" type="button"
-                  style="border-color:#FFB74D;background:linear-gradient(135deg,#FFF3E0,#FFF8E1)">
-            <div class="sync-btn-icon">⬆️</div>
-            <div class="sync-btn-info">
-              <div class="sync-btn-label">ส่งรายการค้างเข้าชีท</div>
-              <div class="sync-btn-sub">ลองส่งสิ่งที่บันทึกในแอปนี้กลับเข้าระบบเก่าอีกครั้ง</div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
-          </button>
+          <!-- ปุ่ม "ซิงค์จากฐานข้อมูลหลัก" เดิมถูกเอาออก
+               เพราะชื่อซ้ำซ้อนกับปุ่ม "ดึงข้อมูลจากระบบเก่า" จนสับสน
+               ตัวเดิมแค่โหลดข้อมูลจาก Supabase ลงเครื่อง ซึ่งแอปทำเองทุก 60 วินาทีอยู่แล้ว
+               ฟังก์ชัน DataMgr.syncNow() ยังอยู่ เพราะ service worker เรียกใช้ (TRIGGER_SYNC) -->
           <button class="sync-btn primary-sync" onclick="SXPull.run()" type="button"
                   style="border-color:#66BB6A;background:linear-gradient(135deg,#E8F5E9,#F1F8E9)">
             <div class="sync-btn-icon">⬇️</div>
@@ -7862,8 +7851,18 @@ const Renderer = (() => {
               <div class="sync-btn-sub">ดึงใบงาน ประวัติ และบันทึก PM ล่าสุดจาก Google Sheets</div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          </button>          <button class="sync-btn primary-sync" onclick="SXPush.flush()" type="button"
+                  style="border-color:#FFB74D;background:linear-gradient(135deg,#FFF3E0,#FFF8E1)">
+            <div class="sync-btn-icon">⬆️</div>
+            <div class="sync-btn-info">
+              <div class="sync-btn-label">ส่งรายการค้างเข้าชีท</div>
+              <div class="sync-btn-sub">ลองส่งสิ่งที่บันทึกในแอปนี้กลับเข้าระบบเก่าอีกครั้ง</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </button>
-          <button class="sync-btn sample-data" onclick="DataMgr.loadDemo()" type="button">
+
+          <button class="sync-btn sample-data" onclick="DataMgr.loadDemo()" type="button"
+                  style="opacity:.55" title="ใช้ตอนไม่มีเน็ตเท่านั้น — จะทับข้อมูลในเครื่องด้วยข้อมูลปลอม">
             <div class="sync-btn-icon">🎲</div>
             <div class="sync-btn-info">
               <div class="sync-btn-label">${T('sync.demo.title','โหลดข้อมูลตัวอย่าง')}</div>
