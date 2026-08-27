@@ -4397,6 +4397,65 @@ function _jobIn(j, id) {
    (Apps Script ทำแบบนี้ไม่ได้เลย ทางเดียวคือตั้งเวลาถามซ้ำ ซึ่งกินโควตา)
    ═══════════════════════════════════════════════════════════════════════ */
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SXPull — ดึงข้อมูลจากระบบเก่า (Google Sheets) เข้า Supabase ตามคำสั่ง
+   ───────────────────────────────────────────────────────────────────────
+   ยิงไปที่ Apps Script "โปรเจกต์แยก" ที่ตั้งไว้ต่างหาก
+   ไม่ใช่ตัวเดียวกับหลังบ้านของระบบเก่า จึงไม่ไปแย่งคิวหรือโควตากับของจริง
+
+   ตั้งค่า SYNC_CFG ก่อนใช้ — เอา URL กับรหัสลับจากโปรเจกต์นั้น
+═══════════════════════════════════════════════════════════════════════ */
+const SYNC_CFG = {
+  url:   '',                       /* URL ที่ลงท้าย /exec ของโปรเจกต์ซิงก์ */
+  token: ''                        /* รหัสลับที่ตั้งไว้ใน CFG.token */
+};
+
+const SXPull = (() => {
+  let busy = false;
+
+  function ready() { return !!(SYNC_CFG.url && SYNC_CFG.token); }
+
+  async function run() {
+    if (busy) { Toast.show('กำลังดึงข้อมูลอยู่ กรุณารอสักครู่', 'warn'); return; }
+    if (!ready()) {
+      Toast.show('ยังไม่ได้ตั้งค่า SYNC_CFG ในไฟล์', 'err');
+      console.log('[SXPull] ต้องใส่ SYNC_CFG.url และ SYNC_CFG.token ก่อน');
+      return;
+    }
+    busy = true;
+    try { UI.setLoader(true, 'กำลังดึงข้อมูลจากระบบเก่า…'); } catch (e) {}
+    try {
+      /* text/plain เพื่อเลี่ยง CORS preflight เหมือนที่ระบบเดิมทำ */
+      const res = await fetch(SYNC_CFG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: SYNC_CFG.token, action: 'sync' }),
+        redirect: 'follow'
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const r = await res.json();
+      if (!r || !r.ok) throw new Error((r && r.error) || 'ตอบกลับผิดปกติ');
+
+      Toast.show('✅ ใบงาน ' + r.jobs + ' · ประวัติ +' + r.logs + ' · PM +' + r.pm, 'ok');
+      console.log('[SXPull]', r.message, '(' + r.seconds + ' วิ)');
+      if (r.dupInSheet) console.warn('[SXPull] พบแถว id ซ้ำในชีท ' + r.dupInSheet + ' แถว');
+
+      /* โหลดหน้าจอใหม่ให้เห็นข้อมูลที่เพิ่งดึงมา */
+      try { if (typeof DashboardSync !== 'undefined' && DashboardSync.refresh) DashboardSync.refresh({ force: true }); } catch (e) {}
+      try { if (typeof _syncJobs === 'function') _syncJobs(false); } catch (e) {}
+      try { if (typeof SXDesktop !== 'undefined' && SXDesktop.isOn()) SXDesktop.reload(); } catch (e) {}
+    } catch (e) {
+      Toast.show('❌ ดึงข้อมูลไม่สำเร็จ', 'err');
+      console.error('[SXPull]', e);
+    } finally {
+      busy = false;
+      try { UI.setLoader(false); } catch (e) {}
+    }
+  }
+  return { run, ready };
+})();
+
 /* ═══════════════════════════════════════════════════════════════════════
    SXSound — เสียงแจ้งเตือนตอนแอปเปิดอยู่
    ───────────────────────────────────────────────────────────────────────
@@ -7690,6 +7749,15 @@ const Renderer = (() => {
             <div class="sync-btn-info">
               <div class="sync-btn-label">${T('sync.pull.title','ซิงค์จากฐานข้อมูลหลัก')}</div>
               <div class="sync-btn-sub">${T('sync.pull.sub','ดึงข้อมูลล่าสุดจาก Google Sheets มาอัพเดทในเครื่อง')}</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <button class="sync-btn primary-sync" onclick="SXPull.run()" type="button"
+                  style="border-color:#66BB6A;background:linear-gradient(135deg,#E8F5E9,#F1F8E9)">
+            <div class="sync-btn-icon">⬇️</div>
+            <div class="sync-btn-info">
+              <div class="sync-btn-label">ดึงข้อมูลจากระบบเก่า</div>
+              <div class="sync-btn-sub">ดึงใบงาน ประวัติ และบันทึก PM ล่าสุดจาก Google Sheets</div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90A4AE" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </button>
