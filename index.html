@@ -3878,6 +3878,9 @@ const Security = (() => {
 ═══════════════════════════════════════════════════════════════════════ */
 const DUAL_WRITE = true;          /* ← สวิตช์ ปิดเป็น false ได้ทันที */
 
+/* เก็บรูปที่ไหน — true = Google Drive (ที่เดียวกับระบบเก่า) · false = Supabase Storage */
+const IMAGE_TO_DRIVE = true;
+
 const SXPush = (() => {
   const KEY = 'sx_push_queue';
 
@@ -4329,8 +4332,22 @@ async function _route(db, a, p) {
     return { ok: true };
   }
 
-  /* ═══════ รูปภาพ → Supabase Storage ═══════ */
+  /* ═══════ รูปภาพ ═══════
+     IMAGE_TO_DRIVE = true  -> ส่งให้ระบบเก่าเก็บลง Google Drive (ที่เดียวกับของเดิม)
+                               ข้อดี: แอปเก่าเห็นรูปด้วย · รูปทั้งหมดอยู่ที่เดียว
+                               ข้อเสีย: กินโควตาระบบเก่า 1 execution ต่อรูป
+     IMAGE_TO_DRIVE = false -> เก็บลง Supabase Storage (แอปเก่าอาจแสดงรูปไม่ได้)
+
+     วันที่ย้ายมาใช้จริงเต็มตัว ให้เปลี่ยนเป็น false */
   case 'uploadRepairImage': {
+    if (IMAGE_TO_DRIVE) {
+      /* ใช้ตัวรับรูปของระบบเก่า (h_uploadRepairImage) ซึ่งรับ imageData/jobId/slot
+         แล้วคืน url แบบ drive.google.com/thumbnail?id=... เหมือนที่ระบบเก่าใช้อยู่
+         ต้อง await จริง เพราะหน้าเว็บรอ url กลับไปใส่ในใบงาน */
+      const r = await window._callGAS(p);
+      if (r && r.ok && r.url) return r;
+      return { ok: false, error: (r && r.error) || 'อัปโหลดเข้า Drive ไม่สำเร็จ' };
+    }
     const dataUrl = p.imageData || '';
     const mt = /^data:(image\/\w+);base64,/.exec(dataUrl);
     if (!mt) return { ok: false, error: 'invalid_image' };
